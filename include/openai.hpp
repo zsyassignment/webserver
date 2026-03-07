@@ -1,0 +1,22 @@
+#pragma once
+
+#include <string>
+#include <optional>
+
+// 轻量的 OpenAI API 客户端，基于 libcurl
+class OpenAIClient {
+public:
+    explicit OpenAIClient(const std::string& apiKey = "");
+
+    void setModel(const std::string& model) { model_ = model; }
+    void setApiKey(const std::string& key) { apiKey_ = key; }
+    void setBaseUrl(const std::string& url) { baseUrl_ = url; }
+
+    // 阻塞调用 OpenAI Chat Completion，失败返回 std::nullopt
+    std::optional<std::string> chatCompletion(const std::string& userMessage) const;
+
+private:
+    std::string apiKey_;
+    std::string model_;
+    std::string baseUrl_;
+};

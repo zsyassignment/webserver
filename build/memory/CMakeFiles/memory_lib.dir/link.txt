@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -shared -Wl,-soname,libmemory_lib.so -o ../../lib/libmemory_lib.so CMakeFiles/memory_lib.dir/memoryPool.cc.o 

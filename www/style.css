@@ -1,0 +1,104 @@
+:root {
+  --bg: #0f172a;
+  --panel: #111827;
+  --accent: #16a34a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --shadow: 0 10px 40px rgba(0,0,0,0.35);
+  --radius: 14px;
+  --transition: 180ms ease;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Inter", "SF Pro Text", system-ui, -apple-system, sans-serif;
+  background: radial-gradient(circle at 20% 20%, rgba(22,163,74,0.18), transparent 40%),
+              radial-gradient(circle at 80% 0%, rgba(59,130,246,0.2), transparent 35%),
+              var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 48px 20px 80px;
+}
+
+header h1 {
+  margin: 0 0 8px;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+}
+
+header p {
+  margin: 0 0 24px;
+  color: var(--muted);
+}
+
+main {
+  display: grid;
+  gap: 16px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  padding: 14px;
+  font-size: 16px;
+  resize: vertical;
+  min-height: 120px;
+}
+
+button {
+  margin-top: 12px;
+  padding: 12px 18px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), #22c55e);
+  color: #0f172a;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition), filter var(--transition);
+  box-shadow: 0 14px 30px rgba(34,197,94,0.25);
+}
+
+button:hover { transform: translateY(-1px); filter: brightness(1.03); }
+button:active { transform: translateY(1px); }
+
+.answer {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "Fira Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+@media (max-width: 640px) {
+  .page { padding: 24px 16px 48px; }
+  header h1 { font-size: 26px; }
+}

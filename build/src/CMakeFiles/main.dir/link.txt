@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/main.dir/main.cc.o -o ../../bin/main  -Wl,-rpath,/home/zsy/Desktop/webserver/lib ../../lib/libsrc_lib.so ../../lib/libmemory_lib.so ../../lib/liblog_lib.so -lpthread /usr/lib/x86_64-linux-gnu/libcurl.so 

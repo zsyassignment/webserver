@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Chat Server</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>AI Chat Server</h1>
+      <p>Type a question and the backend will stream back an answer via <code>/api/chat</code>.</p>
+    </header>
+    <main>
+      <div class="card">
+        <label for="message">Your message</label>
+        <textarea id="message" rows="4" placeholder="Ask me anything..."></textarea>
+        <button id="send">Send</button>
+      </div>
+      <div class="card" id="response-card">
+        <div class="meta" id="meta"></div>
+        <pre id="answer" class="answer">Waiting for your question...</pre>
+      </div>
+    </main>
+  </div>
+  <script src="/main.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 #include "HttpServer.h"
 
 #include <functional>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -94,26 +95,55 @@ void HttpServer::handleChatAsync(const TcpConnectionPtr& conn, const HttpRequest
         HttpResponse resp(closeConnection);
         resp.setContentType("application/json");
 
+        auto toJsonHistory = [](const std::vector<OpenAIClient::ChatMessage>& msgs) {
+            nlohmann::json arr = nlohmann::json::array();
+            for (const auto& m : msgs) {
+                arr.push_back({{"role", m.role}, {"content", m.content}});
+            }
+            return arr;
+        };
+
         try {
             auto jsonReq = nlohmann::json::parse(body);
-            if (!jsonReq.contains("message")) {
+            if (!jsonReq.contains("message") || !jsonReq["message"].is_string()) {
                 resp.setStatusCode(HttpStatusCode::k400BadRequest);
                 resp.setStatusMessage("Missing message field");
                 resp.setBody("{\"error\":\"message required\"}");
             } else {
                 std::string userMessage = jsonReq["message"].get<std::string>();
 
+                std::vector<OpenAIClient::ChatMessage> messages;
+                if (jsonReq.contains("history") && jsonReq["history"].is_array()) {
+                    for (const auto& item : jsonReq["history"]) {
+                        if (item.contains("role") && item.contains("content") && item["role"].is_string() && item["content"].is_string()) {
+                            messages.push_back({item["role"].get<std::string>(), item["content"].get<std::string>()});
+                        }
+                    }
+                }
+
+                const size_t kMaxMessages = 16; // keep recent context compact
+                if (messages.size() > kMaxMessages) {
+                    messages.erase(messages.begin(), messages.end() - kMaxMessages);
+                }
+
+                messages.push_back({"user", userMessage});
+
+                std::string cacheKey = toJsonHistory(messages).dump();
                 std::string cached;
-                if (cache_.get(userMessage, cached)) {
-                    nlohmann::json out{{"cached", true}, {"answer", cached}};
+                if (cache_.get(cacheKey, cached)) {
+                    auto history = messages;
+                    history.push_back({"assistant", cached});
+                    nlohmann::json out{{"cached", true}, {"answer", cached}, {"history", toJsonHistory(history)}};
                     resp.setStatusCode(HttpStatusCode::k200Ok);
                     resp.setStatusMessage("OK");
                     resp.setBody(out.dump());
                 } else {
-                    auto answer = aiClient_.chatCompletion(userMessage);
+                    auto answer = aiClient_.chatCompletion(messages);
                     if (answer.has_value()) {
-                        cache_.put(userMessage, *answer);
-                        nlohmann::json out{{"cached", false}, {"answer", *answer}};
+                        cache_.put(cacheKey, *answer);
+                        auto history = messages;
+                        history.push_back({"assistant", *answer});
+                        nlohmann::json out{{"cached", false}, {"answer", *answer}, {"history", toJsonHistory(history)}};
                         resp.setStatusCode(HttpStatusCode::k200Ok);
                         resp.setStatusMessage("OK");
                         resp.setBody(out.dump());

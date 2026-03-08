@@ -31,9 +31,14 @@ OpenAIClient::OpenAIClient(const std::string& apiKey)
     }
 }
 
-std::optional<std::string> OpenAIClient::chatCompletion(const std::string& userMessage) const {
+std::optional<std::string> OpenAIClient::chatCompletion(const std::vector<ChatMessage>& messages) const {
     if (apiKey_.empty()) {
         LOG_ERROR << "OpenAI API key missing. Set OPENAI_API_KEY env variable.";
+        return std::nullopt;
+    }
+
+    if (messages.empty()) {
+        LOG_ERROR << "chatCompletion called with empty messages";
         return std::nullopt;
     }
 
@@ -53,9 +58,14 @@ std::optional<std::string> OpenAIClient::chatCompletion(const std::string& userM
         headers = curl_slist_append(headers, "Accept: application/json");
     }
 
+    nlohmann::json jsonMessages = nlohmann::json::array();
+    for (const auto& msg : messages) {
+        jsonMessages.push_back({{"role", msg.role}, {"content", msg.content}});
+    }
+
     nlohmann::json payload = {
         {"model", model_},
-        {"messages", nlohmann::json::array({ nlohmann::json{{"role", "user"}, {"content", userMessage}} })}
+        {"messages", jsonMessages}
     };
     std::string payloadStr = payload.dump();
     curl_easy_setopt(curl, CURLOPT_URL, baseUrl_.c_str());
@@ -95,4 +105,8 @@ std::optional<std::string> OpenAIClient::chatCompletion(const std::string& userM
         LOG_ERROR << "Failed to parse OpenAI response: " << ex.what() << " raw: " << responseBuffer;
         return std::nullopt;
     }
+}
+
+std::optional<std::string> OpenAIClient::chatCompletion(const std::string& userMessage) const {
+    return chatCompletion(std::vector<ChatMessage>{{"user", userMessage}});
 }

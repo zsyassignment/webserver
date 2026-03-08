@@ -3,8 +3,6 @@
 # 设置遇到错误立即退出
 set -e
 
-echo "📦 正在检查并安装依赖包..."
-
 sudo apt-get update
 sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
 

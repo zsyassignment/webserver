@@ -1,5 +1,8 @@
 #include "HttpServer.h"
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <functional>
 #include <vector>
 
@@ -7,6 +10,49 @@
 
 #include "Buffer.h"
 #include "Logger.h"
+
+//http1.1规定如果不知道流式输出的总长度，必须声明transfer-encoding: chunked
+//并且每次输出一块数据时，先输出该块数据的字节数（十六进制）和\r\n，再输出数据内容，最后再输出\r\n
+//所有数据发送完后，发送一个0\r\n\r\n表示结束
+namespace {
+std::string toChunk(const std::string& payload)
+{
+    char lenHex[32] = {0};
+    std::snprintf(lenHex, sizeof(lenHex), "%zx", payload.size());
+    std::string chunk;
+    chunk.reserve(std::strlen(lenHex) + 2 + payload.size() + 2);
+    chunk.append(lenHex);
+    chunk.append("\r\n");
+    chunk.append(payload);
+    chunk.append("\r\n");
+    return chunk;
+}
+
+//前端使用eventsource接收数据，要求数据格式为event: 事件名\n data: 数据\n\n
+std::string makeSseEvent(const std::string& eventName, const nlohmann::json& data)
+{
+    std::string out;
+    out.reserve(32 + data.dump().size());
+    out.append("event: ");
+    out.append(eventName);
+    out.append("\n");
+    out.append("data: ");
+    out.append(data.dump());
+    out.append("\n\n");
+    return out;
+}
+
+//防止切分到utf-8字符中间导致乱码，找到下一个合法的utf-8边界
+size_t nextUtf8Boundary(const std::string& s, size_t from, size_t chunkBytes)
+{
+    size_t next = std::min(s.size(), from + chunkBytes);
+    while (next < s.size() && (static_cast<unsigned char>(s[next]) & 0xC0) == 0x80)
+    {
+        ++next;
+    }
+    return next;
+}
+}
 
 HttpServer::HttpServer(EventLoop* loop,
                        const InetAddress& addr,
@@ -112,12 +158,25 @@ void HttpServer::handleChatAsync(const TcpConnectionPtr& conn, const HttpRequest
     //找到属于的I/O线程
     EventLoop* ioLoop = conn->getLoop();
     std::string body = req.body();
+
+    //在处理请求之前先发送一个初始响应，告诉前端连接已建立，并告知ai提供商服务器将使用stream输出
+    ioLoop->queueInLoop([conn, closeConnection]() {
+        std::string headers =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/event-stream; charset=utf-8\r\n" //设置Content-Type: text/event-stream，告知浏览器不要断开tcp连接，并且按照eventsource的格式解析数据
+            "Cache-Control: no-cache\r\n" //告知路由节点和nginx代理不要缓存而是要来一个发送一个
+            "X-Accel-Buffering: no\r\n" //关闭eginx缓冲
+            "Transfer-Encoding: chunked\r\n"; //分块输出
+        headers += closeConnection ? "Connection: close\r\n\r\n" : "Connection: keep-alive\r\n\r\n";
+        conn->send(headers);
+
+        const auto startEvent = makeSseEvent("status", nlohmann::json{{"message", "已连接，正在处理请求..."}});
+        conn->send(toChunk(startEvent));
+    });
+
     //需要按值捕获因为后面的lambda会在另一个线程执行，按引用捕获可能会导致访问已销毁的对象
     executor_.submit([this, conn, ioLoop, body, closeConnection]() 
     {
-        HttpResponse resp(closeConnection);
-        resp.setContentType("application/json");
-
         //C++ 结构体转 JSON 数组 (序列化)
         //[{"role": "user", "content": "你好"}, {"role": "assistant", "content": "你好！"}]
         auto toJsonHistory = [](const std::vector<OpenAIClient::ChatMessage>& msgs) 
@@ -138,9 +197,14 @@ void HttpServer::handleChatAsync(const TcpConnectionPtr& conn, const HttpRequest
             auto jsonReq = nlohmann::json::parse(body);
             if (!jsonReq.contains("message") || !jsonReq["message"].is_string()) 
             {
-                resp.setStatusCode(HttpStatusCode::k400BadRequest);
-                resp.setStatusMessage("Missing message field");
-                resp.setBody("{\"error\":\"message required\"}");
+                ioLoop->queueInLoop([conn, closeConnection]() {
+                    conn->send(toChunk(makeSseEvent("error", nlohmann::json{{"message", "message required"}})));
+                    conn->send("0\r\n\r\n");
+                    if (closeConnection) {
+                        conn->shutdown();
+                    }
+                });
+                return;
             } 
             else 
             {
@@ -174,52 +238,75 @@ void HttpServer::handleChatAsync(const TcpConnectionPtr& conn, const HttpRequest
                 {
                     auto history = messages;
                     history.push_back({"assistant", cached});
-                    nlohmann::json out{{"cached", true}, {"answer", cached}, {"history", toJsonHistory(history)}};
-                    resp.setStatusCode(HttpStatusCode::k200Ok);
-                    resp.setStatusMessage("OK");
-                    resp.setBody(out.dump());
+                    ioLoop->queueInLoop([conn, cached, history, closeConnection, toJsonHistory]() {
+                        conn->send(toChunk(makeSseEvent("status", nlohmann::json{{"message", "命中缓存，正在输出..."}})));
+
+                        size_t pos = 0;
+                        const size_t kChunkBytes = 48;
+                        while (pos < cached.size()) {
+                            size_t next = nextUtf8Boundary(cached, pos, kChunkBytes);
+                            std::string piece = cached.substr(pos, next - pos);
+                            conn->send(toChunk(makeSseEvent("delta", nlohmann::json{{"content", piece}})));
+                            pos = next;
+                        }
+
+                        conn->send(toChunk(makeSseEvent("done", nlohmann::json{{"cached", true}, {"history", toJsonHistory(history)}})));
+                        conn->send("0\r\n\r\n");
+                        if (closeConnection) {
+                            conn->shutdown();
+                        }
+                    });
                 } 
                 else 
                 {
-                    auto answer = aiClient_.chatCompletion(messages);
-                    if (answer.has_value()) 
-                    {
+                    ioLoop->queueInLoop([conn]() {
+                        conn->send(toChunk(makeSseEvent("status", nlohmann::json{{"message", "模型思考中..."}})));
+                    });
+
+                    auto answer = aiClient_.chatCompletionStream(
+                        messages,
+                        [ioLoop, conn](const std::string& delta) {
+                            if (delta.empty()) {
+                                return;
+                            }
+                            ioLoop->queueInLoop([conn, delta]() {
+                                conn->send(toChunk(makeSseEvent("delta", nlohmann::json{{"content", delta}})));
+                            });
+                        });
+
+                    if (answer.has_value()) {
                         cache_.put(cacheKey, *answer);
                         auto history = messages;
                         history.push_back({"assistant", *answer});
-                        nlohmann::json out{{"cached", false}, {"answer", *answer}, {"history", toJsonHistory(history)}};
-                        resp.setStatusCode(HttpStatusCode::k200Ok);
-                        resp.setStatusMessage("OK");
-                        resp.setBody(out.dump());
-                    } 
-                    else 
-                    {
-                        resp.setStatusCode(HttpStatusCode::k500InternalServerError);
-                        resp.setStatusMessage("AI backend error");
-                        resp.setBody("{\"error\":\"AI service unavailable\"}");
+                        ioLoop->queueInLoop([conn, history, closeConnection, toJsonHistory]() {
+                            conn->send(toChunk(makeSseEvent("done", nlohmann::json{{"cached", false}, {"history", toJsonHistory(history)}})));
+                            conn->send("0\r\n\r\n");
+                            if (closeConnection) {
+                                conn->shutdown();
+                            }
+                        });
+                    } else {
+                        ioLoop->queueInLoop([conn, closeConnection]() {
+                            conn->send(toChunk(makeSseEvent("error", nlohmann::json{{"message", "AI service unavailable"}})));
+                            conn->send("0\r\n\r\n");
+                            if (closeConnection) {
+                                conn->shutdown();
+                            }
+                        });
                     }
                 }
             }
         } 
         catch (const std::exception& ex) 
         {
-            resp.setStatusCode(HttpStatusCode::k400BadRequest);
-            resp.setStatusMessage("Invalid JSON");
-            resp.setBody(std::string("{\"error\":\"invalid json: ") + ex.what() + "\"}");
+            ioLoop->queueInLoop([conn, closeConnection, msg = std::string(ex.what())]() {
+                conn->send(toChunk(makeSseEvent("error", nlohmann::json{{"message", std::string("invalid json: ") + msg}})));
+                conn->send("0\r\n\r\n");
+                if (closeConnection) {
+                    conn->shutdown();
+                }
+            });
         }
-
-        //最后用ioLoop发送响应，确保在正确的线程中操作连接对象，直接调用conn->send可能会跨线程访问连接对象，导致线程安全问题
-        ioLoop->queueInLoop([conn, resp]() mutable 
-        {
-            Buffer buffer;
-            resp.appendToBuffer(&buffer);
-            std::string serialized = buffer.retrieveAllAsString();
-            conn->send(serialized);
-            if (resp.closeConnection()) 
-            {
-                conn->shutdown();
-            }
-        });
     });
 }
 

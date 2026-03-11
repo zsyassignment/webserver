@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,6 +22,11 @@ public:
     // 阻塞调用 OpenAI Chat Completion，失败返回 std::nullopt
     std::optional<std::string> chatCompletion(const std::vector<ChatMessage>& messages) const;
     std::optional<std::string> chatCompletion(const std::string& userMessage) const;
+
+    // 上游 stream=true，按增量回调返回 token，函数返回完整拼接文本
+    std::optional<std::string> chatCompletionStream(
+        const std::vector<ChatMessage>& messages,
+        const std::function<void(const std::string&)>& onDelta) const;
 
 private:
     std::string apiKey_;

@@ -11,6 +11,7 @@ lib/
 *.dll
 *.exe
 *.out
+*.log
 
 # 编辑器和系统的隐藏缓存文件
 .vscode/

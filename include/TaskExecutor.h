@@ -20,8 +20,8 @@ public:
 private:
     void workerLoop();
 
-    std::vector<std::unique_ptr<Thread>> workers_;
-    std::queue<std::function<void()>> tasks_;
+    std::vector<std::unique_ptr<Thread>> workers_; //工作线程
+    std::queue<std::function<void()>> tasks_; //任务队列
     std::mutex mutex_;
     std::condition_variable cv_;
     bool running_;

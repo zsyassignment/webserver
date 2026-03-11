@@ -18,6 +18,7 @@ template<typename Key, typename Value>
 class FreqList
 {
 private:
+//双向链表，把一个频次移到另一个频次
     struct Node
     {
         int freq; // 访问频次
@@ -52,7 +53,7 @@ public:
       return head_->next == tail_;
     }
 
-    // 提那家结点管理方法
+    // 结点管理方法
     void addNode(NodePtr node) 
     {
         if (!node || !head_ || !tail_) 
@@ -169,7 +170,7 @@ private:
     NodeMap                                        nodeMap_; // key 到 缓存节点的映射
     std::unordered_map<int, FreqList<Key, Value>*> freqToFreqList_;// 访问频次到该频次链表的映射
 };
-
+//命中后freq++，并把node从原来链表取下放入访问频次+1的链表中，并且更新最小访问频次和平均访问频次
 template<typename Key, typename Value>
 void KLfuCache<Key, Value>::getInternal(NodePtr node, Value& value)
 {
@@ -316,19 +317,21 @@ void KLfuCache<Key, Value>::updateMinFreq()
         minFreq_ = 1;
 }
 
+//分片锁
 // 并没有牺牲空间换时间，他是把原有缓存大小进行了分片。
 template<typename Key, typename Value>
 class KHashLfuCache
 {
 public:
+    //hardware_concurrency()返回系统支持的并发线程数，sliceNum_是分片数量，capacity_是缓存总容量，maxAverageNum是每个分片的最大平均访问频次
     KHashLfuCache(size_t capacity, int sliceNum, int maxAverageNum = 10)
         : sliceNum_(sliceNum > 0 ? sliceNum : std::thread::hardware_concurrency())
         , capacity_(capacity)
     {
-        size_t sliceSize = std::ceil(capacity_ / static_cast<double>(sliceNum_)); // 每个lfu分片的容量
+        size_t sliceSize = std::ceil(capacity_ / static_cast<double>(sliceNum_)); // 每个lfu分片的容量，向上取整保证总容量不小于capacity_
         for (int i = 0; i < sliceNum_; ++i)
         {
-            lfuSliceCaches_.emplace_back(new KLfuCache<Key, Value>(sliceSize, maxAverageNum));
+            lfuSliceCaches_.emplace_back(new KLfuCache<Key, Value>(sliceSize, maxAverageNum));//把分片装入容器中
         }
     }
 

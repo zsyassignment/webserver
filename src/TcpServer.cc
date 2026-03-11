@@ -155,7 +155,7 @@ TcpServer::TcpServer(EventLoop *loop,
     , nextConnId_(1) // 连接 ID 从 1 开始
     , started_(0)
 {
-    // 🔥 极其关键：告诉 Acceptor，如果有新连接（读事件），请调用 TcpServer 的 newConnection 函数！
+    // 极其关键：告诉 Acceptor，如果有新连接（读事件），请调用 TcpServer 的 newConnection 函数！
     // placeholders::_1 是 sockfd，_2 是 peerAddr
     acceptor_->setNewConnectionCallback(
         std::bind(&TcpServer::newConnection, this, std::placeholders::_1, std::placeholders::_2));
@@ -187,7 +187,7 @@ void TcpServer::setThreadNum(int numThreads)
 // 开启服务器监听
 void TcpServer::start()
 {
-    // 🔥 防手抖设计：利用原子操作确保多线程调用 start() 时，只启动一次
+    //防手抖设计：利用原子操作确保多线程调用 start() 时，只启动一次
     if (started_.fetch_add(1) == 0)    
     {
         // 1. 唤醒所有底层子线程，开始事件循环
@@ -200,7 +200,7 @@ void TcpServer::start()
 
 
 
-// 🔥 核心业务流程：处理新连接的交接大典
+//核心业务流程：处理新连接的交接大典
 void TcpServer::newConnection(int sockfd, const InetAddress &peerAddr)
 {
     // 1. 轮询算法：从线程池中挑一个最闲的 SubLoop（从 Reactor）

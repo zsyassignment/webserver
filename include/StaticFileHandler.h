@@ -14,5 +14,5 @@ private:
     bool readFile(const std::string& fullPath, std::string& out) const;
     std::string detectMime(const std::string& path) const;
 
-    std::string rootDir_;
+    std::string rootDir_; //静态文件根目录
 };

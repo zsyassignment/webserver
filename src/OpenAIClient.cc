@@ -113,7 +113,8 @@ std::optional<std::string> OpenAIClient::chatCompletion(const std::vector<ChatMe
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
-    if (responseCode >= 400) {
+    if (responseCode >= 400) 
+    {
         LOG_ERROR << "OpenAI API responded with status " << responseCode << " body: " << responseBuffer;
         return std::nullopt;
     }
@@ -121,18 +122,21 @@ std::optional<std::string> OpenAIClient::chatCompletion(const std::vector<ChatMe
     try {
         //反序列化
         auto json = nlohmann::json::parse(responseBuffer);
-        if (!json.contains("choices") || json["choices"].empty()) {
+        if (!json.contains("choices") || json["choices"].empty()) 
+        {
             LOG_ERROR << "Unexpected OpenAI response: " << responseBuffer;
             return std::nullopt;
         }
         auto content = json["choices"][0]["message"]["content"].get<std::string>();
         return content;
-    } catch (const std::exception& ex) {
+    } catch (const std::exception& ex) 
+    {
         LOG_ERROR << "Failed to parse OpenAI response: " << ex.what() << " raw: " << responseBuffer;
         return std::nullopt;
     }
 }
 
-std::optional<std::string> OpenAIClient::chatCompletion(const std::string& userMessage) const {
+std::optional<std::string> OpenAIClient::chatCompletion(const std::string& userMessage) const 
+{
     return chatCompletion(std::vector<ChatMessage>{{"user", userMessage}});
 }
